@@ -6,6 +6,10 @@ A single-file, offline-first app for tracking customers and the materials used f
 
 No build step, no server, no dependencies to install. Just open `customer-ledger.html` in any modern browser (Chrome, Safari, Edge, Firefox).
 
+## Rope measuring tool
+
+Click **+ Add rope** (top of the app, or inside a customer's expanded card) to log a crane rope calculation against a customer: location, crane number, rope size, crane details, SWL, number of falls, and drum reeve details (number / length / extra rope). Load per fall and total rope required are calculated automatically, the same way as the original spreadsheet. Saved entries show up under that customer's "ropes" list.
+
 ## Where your data lives
 
 Data is saved to your browser's `localStorage`, scoped to **this file's origin**. That means:

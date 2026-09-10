@@ -10,6 +10,18 @@ No build step, no server, no dependencies to install. Just open `customer-ledger
 
 Click **+ Add rope** (top of the app, or inside a customer's expanded card) to log a crane rope calculation against a customer: location, crane number, rope size, crane details, SWL, number of falls, and drum reeve details (number / length / extra rope). Load per fall and total rope required are calculated automatically, the same way as the original spreadsheet. Saved entries show up under that customer's "ropes" list.
 
+## Editing entries
+
+Every material and rope entry has an **edit** button next to **remove**. It reopens the same form pre-filled with the current values — rope totals recalculate automatically when you save changes.
+
+## Photos
+
+Both the material and rope forms have a **📷 Add / upload photo** button. Photos are compressed and stored alongside the entry, and show as a small thumbnail in the list — tap it to view full-size. Since photos are stored as part of your local data, a lot of high-resolution photos can add up; the app compresses each one on upload to keep this manageable, but it's still worth exporting backups regularly (see below).
+
+## Search
+
+The search bar at the top finds customers by name or company, and also by material name or rope details (location, crane number, rope size) — so you can look up a part and find which customer it belongs to.
+
 ## Where your data lives
 
 Data is saved to your browser's `localStorage`, scoped to **this file's origin**. That means:

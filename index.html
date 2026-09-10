@@ -185,6 +185,12 @@
   }
   .search-dropdown .opt .oname { font-size: 14px; }
   .search-dropdown .opt .ocompany { font-size: 12px; color: var(--ink-soft); margin-top: 1px; }
+  .search-dropdown .opt .omatch {
+    font-size: 11px;
+    color: var(--moss);
+    margin-top: 3px;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
   .search-dropdown .no-match {
     padding: 12px;
     font-size: 13px;
@@ -285,12 +291,13 @@
 
   .material-row {
     display: flex;
-    justify-content: space-between;
     align-items: flex-start;
+    gap: 10px;
     padding: 9px 0;
     border-bottom: 1px solid var(--paper-line);
   }
   .material-row:last-child { border-bottom: none; }
+  .material-row .left { flex: 1; min-width: 0; }
 
   .material-row .left .mname { font-size: 15px; }
   .material-row .left .mnotes { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
@@ -303,6 +310,15 @@
     padding-left: 10px;
   }
   .material-row .right .qty { color: var(--ink); font-size: 14px; }
+
+  .row-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+  .row-actions .btn-text { font-size: 12px; padding: 0; }
+  .row-actions .btn-danger { font-size: 12px; padding: 0; }
 
   .empty-materials {
     font-size: 13px;
@@ -355,6 +371,58 @@
     margin-top: 4px;
   }
   .calc-preview strong { color: var(--moss-dark); font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+
+  .photo-btn { width: 100%; text-align: center; }
+  .photo-preview-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .photo-preview {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--paper-line);
+  }
+
+  .row-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--paper-line);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 17, 12, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 100;
+  }
+  .lightbox-overlay img {
+    max-width: 100%;
+    max-height: 85vh;
+    border-radius: 4px;
+  }
+  .lightbox-close {
+    position: absolute;
+    top: 22px;
+    right: 22px;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    font-size: 18px;
+    line-height: 1;
+  }
 
   .empty-state {
     text-align: center;
@@ -431,6 +499,35 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function compressImage(file, maxDim = 900, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (e) => { img.src = e.target.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function KeyEngLogo() {
   return (
     <svg width="42" height="42" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -461,11 +558,32 @@ function CustomerSearch({ customers, onSelect }) {
   }, []);
 
   const q = query.trim().toLowerCase();
+
+  function matchReason(c) {
+    if (c.name.toLowerCase().includes(q)) return null;
+    if ((c.company || '').toLowerCase().includes(q)) return null;
+    const material = (c.materials || []).find(m => m.name.toLowerCase().includes(q));
+    if (material) return { type: 'part', label: material.name };
+    const rope = (c.ropes || []).find(r =>
+      (r.location || '').toLowerCase().includes(q) ||
+      (r.craneNumber || '').toLowerCase().includes(q) ||
+      (r.ropeSize || '').toLowerCase().includes(q) ||
+      (r.craneDetails || '').toLowerCase().includes(q)
+    );
+    if (rope) return { type: 'rope', label: rope.location || rope.craneNumber || 'rope entry' };
+    return null;
+  }
+
   const matches = q
-    ? customers.filter(c =>
-        c.name.toLowerCase().includes(q) || (c.company || '').toLowerCase().includes(q)
-      )
-    : customers;
+    ? customers
+        .map(c => {
+          const nameMatch = c.name.toLowerCase().includes(q) || (c.company || '').toLowerCase().includes(q);
+          if (nameMatch) return { customer: c, reason: null };
+          const reason = matchReason(c);
+          return reason ? { customer: c, reason } : null;
+        })
+        .filter(Boolean)
+    : customers.map(c => ({ customer: c, reason: null }));
 
   function pick(c) {
     setQuery('');
@@ -482,17 +600,28 @@ function CustomerSearch({ customers, onSelect }) {
           value={query}
           onFocus={() => setIsOpen(true)}
           onChange={e => { setQuery(e.target.value); setIsOpen(true); }}
-          placeholder="Find a customer&hellip;"
+          placeholder="Find a customer or part&hellip;"
         />
         <span className="chevron">{isOpen ? '▲' : '▾'}</span>
       </div>
       {isOpen && (
         <div className="search-dropdown">
-          {matches.length === 0 && <div className="no-match">No customers match "{query}"</div>}
-          {matches.map(c => (
+          {matches.length === 0 && <div className="no-match">No customers or parts match "{query}"</div>}
+          {matches.map(({ customer: c, reason }) => (
             <div className="opt" key={c.id} onClick={() => pick(c)}>
-              <div className="oname">{c.name}</div>
-              {c.company && <div className="ocompany">{c.company}</div>}
+              {c.company ? (
+                <React.Fragment>
+                  <div className="oname">{c.company}</div>
+                  <div className="ocompany">{c.name}</div>
+                </React.Fragment>
+              ) : (
+                <div className="oname">{c.name}</div>
+              )}
+              {reason && (
+                <div className="omatch">
+                  {reason.type === 'part' ? 'material: ' : 'rope: '}{reason.label}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -636,7 +765,16 @@ function App() {
     persist(next);
   }
 
-  function addRope(customerId, data) {
+  function updateMaterial(customerId, materialId, data) {
+    const next = customers.map(c =>
+      c.id === customerId
+        ? { ...c, materials: c.materials.map(m => m.id === materialId ? { ...m, ...data } : m) }
+        : c
+    );
+    persist(next);
+  }
+
+  function computeRopeCalcs(data) {
     const swl = parseFloat(data.swl) || 0;
     const falls = parseFloat(data.numberOfFalls) || 0;
     const reeveNumber = parseFloat(data.reeveNumber) || 0;
@@ -644,11 +782,17 @@ function App() {
     const extraRope = parseFloat(data.extraRope) || 0;
     const loadPerFall = falls > 0 ? swl / falls : 0;
     const totalRope = reeveNumber * reeveLength + extraRope;
+    return {
+      loadPerFall: Math.round(loadPerFall * 100) / 100,
+      totalRope: Math.round(totalRope * 100) / 100,
+    };
+  }
+
+  function addRope(customerId, data) {
     const rope = {
       id: uid(),
       ...data,
-      loadPerFall: Math.round(loadPerFall * 100) / 100,
-      totalRope: Math.round(totalRope * 100) / 100,
+      ...computeRopeCalcs(data),
       addedAt: Date.now(),
     };
     const next = customers.map(c =>
@@ -662,6 +806,20 @@ function App() {
     const next = customers.map(c =>
       c.id === customerId
         ? { ...c, ropes: (c.ropes || []).filter(r => r.id !== ropeId) }
+        : c
+    );
+    persist(next);
+  }
+
+  function updateRope(customerId, ropeId, data) {
+    const next = customers.map(c =>
+      c.id === customerId
+        ? {
+            ...c,
+            ropes: (c.ropes || []).map(r =>
+              r.id === ropeId ? { ...r, ...data, ...computeRopeCalcs(data) } : r
+            ),
+          }
         : c
     );
     persist(next);
@@ -805,10 +963,12 @@ function App() {
           onDelete={() => deleteCustomer(c.id)}
           onAddMaterial={(data) => addMaterial(c.id, data)}
           onDeleteMaterial={(mid) => deleteMaterial(c.id, mid)}
+          onUpdateMaterial={(mid, data) => updateMaterial(c.id, mid, data)}
           isAddingMaterial={addingMaterialFor === c.id}
           setAddingMaterial={(v) => setAddingMaterialFor(v ? c.id : null)}
           onAddRope={(data) => addRope(c.id, data)}
           onDeleteRope={(rid) => deleteRope(c.id, rid)}
+          onUpdateRope={(rid, data) => updateRope(c.id, rid, data)}
           isAddingRope={addingRopeFor === c.id}
           setAddingRope={(v) => setAddingRopeFor(v ? c.id : null)}
         />
@@ -855,14 +1015,24 @@ function AddCustomerForm({ onSave, onCancel }) {
   );
 }
 
-function CustomerCard({ customer, isOpen, isHighlighted, cardRef, onToggle, onDelete, onAddMaterial, onDeleteMaterial, isAddingMaterial, setAddingMaterial, onAddRope, onDeleteRope, isAddingRope, setAddingRope }) {
+function CustomerCard({ customer, isOpen, isHighlighted, cardRef, onToggle, onDelete, onAddMaterial, onDeleteMaterial, onUpdateMaterial, isAddingMaterial, setAddingMaterial, onAddRope, onDeleteRope, onUpdateRope, isAddingRope, setAddingRope }) {
   const ropes = customer.ropes || [];
+  const [editingMaterialId, setEditingMaterialId] = useState(null);
+  const [editingRopeId, setEditingRopeId] = useState(null);
+  const [viewingPhoto, setViewingPhoto] = useState(null);
+
   return (
     <div className={"customer-card" + (isHighlighted ? " highlight" : "")} ref={cardRef}>
       <div className="customer-head" onClick={onToggle}>
         <div className="who">
-          <div className="name">{customer.name}</div>
-          {customer.company && <div className="company">{customer.company}</div>}
+          {customer.company ? (
+            <React.Fragment>
+              <div className="name">{customer.company}</div>
+              <div className="company">{customer.name}</div>
+            </React.Fragment>
+          ) : (
+            <div className="name">{customer.name}</div>
+          )}
         </div>
         <div className="meta">
           {customer.materials.length} material{customer.materials.length === 1 ? '' : 's'} · {ropes.length} rope{ropes.length === 1 ? '' : 's'}
@@ -887,17 +1057,32 @@ function CustomerCard({ customer, isOpen, isHighlighted, cardRef, onToggle, onDe
           )}
 
           {customer.materials.map(m => (
-            <div className="material-row" key={m.id}>
-              <div className="left">
-                <div className="mname">{m.name}</div>
-                {m.notes && <div className="mnotes">{m.notes}</div>}
+            editingMaterialId === m.id ? (
+              <AddMaterialForm
+                key={m.id}
+                initial={m}
+                onSave={(data) => { onUpdateMaterial(m.id, data); setEditingMaterialId(null); }}
+                onCancel={() => setEditingMaterialId(null)}
+              />
+            ) : (
+              <div className="material-row" key={m.id}>
+                {m.photo && (
+                  <img src={m.photo} className="row-thumb" onClick={() => setViewingPhoto(m.photo)} alt="" />
+                )}
+                <div className="left">
+                  <div className="mname">{m.name}</div>
+                  {m.notes && <div className="mnotes">{m.notes}</div>}
+                </div>
+                <div className="right">
+                  <div className="qty">{m.qty} {m.unit}</div>
+                  <div>{m.date}</div>
+                  <div className="row-actions">
+                    <button className="btn-text" onClick={() => setEditingMaterialId(m.id)}>edit</button>
+                    <button className="btn-danger" onClick={() => onDeleteMaterial(m.id)}>remove</button>
+                  </div>
+                </div>
               </div>
-              <div className="right">
-                <div className="qty">{m.qty} {m.unit}</div>
-                <div>{m.date}</div>
-                <button className="btn-danger" onClick={() => onDeleteMaterial(m.id)}>remove</button>
-              </div>
-            </div>
+            )
           ))}
 
           <div className="add-material-toggle">
@@ -918,23 +1103,39 @@ function CustomerCard({ customer, isOpen, isHighlighted, cardRef, onToggle, onDe
           )}
 
           {ropes.map(r => (
-            <div className="rope-row" key={r.id}>
-              <div className="rope-row-head">
-                <div className="rname">{r.location || 'No location'} {r.craneNumber && `— Crane ${r.craneNumber}`}</div>
-                <button className="btn-danger" onClick={() => onDeleteRope(r.id)}>remove</button>
+            editingRopeId === r.id ? (
+              <AddRopeForm
+                key={r.id}
+                lockedCustomerName={customer.name}
+                initial={r}
+                onSave={(_, data) => { onUpdateRope(r.id, data); setEditingRopeId(null); }}
+                onCancel={() => setEditingRopeId(null)}
+              />
+            ) : (
+              <div className="rope-row" key={r.id}>
+                <div className="rope-row-head">
+                  <div className="rname">{r.location || 'No location'} {r.craneNumber && `— Crane ${r.craneNumber}`}</div>
+                  <div className="row-actions">
+                    <button className="btn-text" onClick={() => setEditingRopeId(r.id)}>edit</button>
+                    <button className="btn-danger" onClick={() => onDeleteRope(r.id)}>remove</button>
+                  </div>
+                </div>
+                <div className="rope-grid">
+                  <div><span>Rope size</span>{r.ropeSize || '—'} mm</div>
+                  <div><span>Crane details</span>{r.craneDetails || '—'}</div>
+                  <div><span>SWL</span>{r.swl || '—'}</div>
+                  <div><span>Falls</span>{r.numberOfFalls || '—'}</div>
+                  <div><span>Load/fall</span>{r.loadPerFall}</div>
+                  <div><span>Reeve</span>{r.reeveNumber || 0} × {r.reeveLength || 0}m + {r.extraRope || 0}</div>
+                  <div><span>Total rope</span><strong>{r.totalRope}m</strong></div>
+                  <div><span>Date</span>{r.date}</div>
+                </div>
+                {r.notes && <div className="rope-notes">{r.notes}</div>}
+                {r.photo && (
+                  <img src={r.photo} className="row-thumb" style={{ marginTop: 8 }} onClick={() => setViewingPhoto(r.photo)} alt="" />
+                )}
               </div>
-              <div className="rope-grid">
-                <div><span>Rope size</span>{r.ropeSize || '—'} mm</div>
-                <div><span>Crane details</span>{r.craneDetails || '—'}</div>
-                <div><span>SWL</span>{r.swl || '—'}</div>
-                <div><span>Falls</span>{r.numberOfFalls || '—'}</div>
-                <div><span>Load/fall</span>{r.loadPerFall}</div>
-                <div><span>Reeve</span>{r.reeveNumber || 0} × {r.reeveLength || 0}m + {r.extraRope || 0}</div>
-                <div><span>Total rope</span><strong>{r.totalRope}m</strong></div>
-                <div><span>Date</span>{r.date}</div>
-              </div>
-              {r.notes && <div className="rope-notes">{r.notes}</div>}
-            </div>
+            )
           ))}
 
           <div className="add-material-toggle">
@@ -954,21 +1155,72 @@ function CustomerCard({ customer, isOpen, isHighlighted, cardRef, onToggle, onDe
           </div>
         </div>
       )}
+
+      {viewingPhoto && (
+        <div className="lightbox-overlay" onClick={() => setViewingPhoto(null)}>
+          <button className="lightbox-close" onClick={() => setViewingPhoto(null)}>✕</button>
+          <img src={viewingPhoto} alt="" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }
 
-function AddMaterialForm({ onSave, onCancel }) {
-  const [name, setName] = useState('');
-  const [qty, setQty] = useState('');
-  const [unit, setUnit] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [notes, setNotes] = useState('');
+function PhotoPicker({ photo, setPhoto }) {
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    try {
+      const dataUrl = await compressImage(file);
+      setPhoto(dataUrl);
+    } catch (err) {
+      alert("Couldn't read that photo. Try a different one.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="field">
+      <label>photo</label>
+      {photo ? (
+        <div className="photo-preview-wrap">
+          <img src={photo} className="photo-preview" alt="Attached" />
+          <button type="button" className="btn-danger" onClick={() => setPhoto(null)}>remove photo</button>
+        </div>
+      ) : (
+        <button type="button" className="btn-secondary photo-btn" onClick={() => inputRef.current.click()} disabled={busy}>
+          {busy ? 'Processing…' : '📷 Add / upload photo'}
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFile}
+      />
+    </div>
+  );
+}
+
+function AddMaterialForm({ initial, onSave, onCancel }) {
+  const [name, setName] = useState(initial ? initial.name : '');
+  const [qty, setQty] = useState(initial ? initial.qty : '');
+  const [unit, setUnit] = useState(initial ? initial.unit : '');
+  const [date, setDate] = useState(() => initial ? initial.date : new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState(initial ? initial.notes : '');
+  const [photo, setPhoto] = useState(initial ? (initial.photo || null) : null);
 
   function submit(e) {
     e.preventDefault();
     if (!name.trim() || !qty) return;
-    onSave({ name: name.trim(), qty, unit: unit.trim(), date, notes: notes.trim() });
+    onSave({ name: name.trim(), qty, unit: unit.trim(), date, notes: notes.trim(), photo });
   }
 
   return (
@@ -995,27 +1247,29 @@ function AddMaterialForm({ onSave, onCancel }) {
         <label>notes</label>
         <textarea rows="2" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
       </div>
+      <PhotoPicker photo={photo} setPhoto={setPhoto} />
       <div className="form-actions">
-        <button type="submit" className="btn-primary">Save material</button>
+        <button type="submit" className="btn-primary">{initial ? 'Save changes' : 'Save material'}</button>
         <button type="button" className="btn-cancel" onClick={onCancel}>Cancel</button>
       </div>
     </form>
   );
 }
 
-function AddRopeForm({ customers, lockedCustomerName, onSave, onCancel }) {
+function AddRopeForm({ customers, lockedCustomerName, initial, onSave, onCancel }) {
   const [customerId, setCustomerId] = useState('');
-  const [location, setLocation] = useState('');
-  const [craneNumber, setCraneNumber] = useState('');
-  const [ropeSize, setRopeSize] = useState('');
-  const [craneDetails, setCraneDetails] = useState('');
-  const [swl, setSwl] = useState('');
-  const [numberOfFalls, setNumberOfFalls] = useState('');
-  const [reeveNumber, setReeveNumber] = useState('');
-  const [reeveLength, setReeveLength] = useState('');
-  const [extraRope, setExtraRope] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [notes, setNotes] = useState('');
+  const [location, setLocation] = useState(initial ? initial.location : '');
+  const [craneNumber, setCraneNumber] = useState(initial ? initial.craneNumber : '');
+  const [ropeSize, setRopeSize] = useState(initial ? initial.ropeSize : '');
+  const [craneDetails, setCraneDetails] = useState(initial ? initial.craneDetails : '');
+  const [swl, setSwl] = useState(initial ? initial.swl : '');
+  const [numberOfFalls, setNumberOfFalls] = useState(initial ? initial.numberOfFalls : '');
+  const [reeveNumber, setReeveNumber] = useState(initial ? initial.reeveNumber : '');
+  const [reeveLength, setReeveLength] = useState(initial ? initial.reeveLength : '');
+  const [extraRope, setExtraRope] = useState(initial ? initial.extraRope : '');
+  const [date, setDate] = useState(() => initial ? initial.date : new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState(initial ? initial.notes : '');
+  const [photo, setPhoto] = useState(initial ? (initial.photo || null) : null);
 
   const swlNum = parseFloat(swl) || 0;
   const fallsNum = parseFloat(numberOfFalls) || 0;
@@ -1041,6 +1295,7 @@ function AddRopeForm({ customers, lockedCustomerName, onSave, onCancel }) {
       extraRope,
       date,
       notes: notes.trim(),
+      photo,
     });
   }
 
@@ -1057,7 +1312,7 @@ function AddRopeForm({ customers, lockedCustomerName, onSave, onCancel }) {
           <select value={customerId} onChange={e => setCustomerId(e.target.value)}>
             <option value="">Select a customer&hellip;</option>
             {customers.map(c => (
-              <option key={c.id} value={c.id}>{c.name}{c.company ? ` — ${c.company}` : ''}</option>
+              <option key={c.id} value={c.id}>{c.company ? `${c.company} — ${c.name}` : c.name}</option>
             ))}
           </select>
         </div>
@@ -1124,9 +1379,10 @@ function AddRopeForm({ customers, lockedCustomerName, onSave, onCancel }) {
         <label>notes</label>
         <textarea rows="2" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
       </div>
+      <PhotoPicker photo={photo} setPhoto={setPhoto} />
 
       <div className="form-actions">
-        <button type="submit" className="btn-primary">Save rope</button>
+        <button type="submit" className="btn-primary">{initial ? 'Save changes' : 'Save rope'}</button>
         <button type="button" className="btn-cancel" onClick={onCancel}>Cancel</button>
       </div>
     </form>

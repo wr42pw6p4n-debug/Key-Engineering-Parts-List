@@ -38,18 +38,21 @@ Notes:
 
 - This only works in **Chrome or Edge** — Safari and Firefox don't support the browser API this relies on (File System Access API), so the button won't appear as usable there.
 - The browser remembers the folder you picked, so you shouldn't need to reconnect on every visit — but if it ever loses permission (e.g. after clearing site data), you'll see a **reconnect** prompt.
-- This app doesn't read that file automatically on other devices — each device still keeps its own local copy in `localStorage`. To actually pull in data synced from another device, use **Import backup** and select the synced `key-engineering-customers.json` file from your OneDrive folder.
+- This app doesn't read that file automatically on other devices — each device still keeps its own local copy in `localStorage`. To actually pull in data synced from another device, use **Merge in backup** and select the synced `key-engineering-customers.json` file from your OneDrive folder. This merges rather than overwrites, so it's safe to do even if the device already has its own entries.
 - Disconnecting the folder just stops future auto-writes — it doesn't delete anything already saved there.
 
-## Moving data between devices
+## Moving data between devices / working as a team
 
-Use the **Export backup** / **Import backup** buttons in the app:
+Use **Export backup** / **Merge in backup** to combine everyone's work:
 
-1. On the device with your data, click **Export backup** — downloads a `.json` file.
-2. Copy that file to the other device (AirDrop, email, USB, cloud drive, whatever's easiest).
-3. On the other device, open the app and click **Import backup**, then select the file.
+1. Each person exports their own data (**Export backup**) into your shared OneDrive folder — give the file a distinct name per person if you're doing this regularly (e.g. `customers-dave.json`).
+2. On the device that should end up with everything, use **Merge in backup** for each person's file, one at a time.
+3. Importing now **merges** rather than replacing — it adds any customers, materials, or ropes it doesn't already have, and shows a summary of what came in (e.g. "Merged in: 2 new customers, 5 new materials"). If the same entry was edited in two places, it keeps whichever edit is more recent.
+4. Once a device has the full merged set, export from there and have everyone else **Merge in backup** that file, so all devices end up in sync.
 
-This overwrites whatever is currently in the app on the importing device, so export from there first if it also has data you want to keep.
+**Important limitation:** this is a manual, merge-on-import process, not live sync — two people entering data at the same time on different devices won't see each other's changes until someone exports and everyone else imports. It also can't sync *deletions*: if someone deletes an entry on their device, merging their old export elsewhere won't remove it there too (merging only ever adds or updates, never deletes), so deleting a customer or entry is best done consistently across devices as a manual step, or by re-exporting and re-merging afterwards.
+
+If you outgrow this — e.g. several people need to see each other's entries appear automatically, in real time — that needs a proper shared backend (like Supabase) instead of file-based merging. That's a bigger change than this app currently has, but it's doable if this manual merge workflow becomes a hassle.
 
 ## Hosting it (optional)
 

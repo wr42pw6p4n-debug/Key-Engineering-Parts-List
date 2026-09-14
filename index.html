@@ -749,7 +749,7 @@ function App() {
   function addMaterial(customerId, data) {
     const next = customers.map(c =>
       c.id === customerId
-        ? { ...c, materials: [{ id: uid(), ...data, addedAt: Date.now() }, ...c.materials] }
+        ? { ...c, materials: [{ id: uid(), ...data, addedAt: Date.now(), updatedAt: Date.now() }, ...c.materials] }
         : c
     );
     persist(next);
@@ -768,7 +768,7 @@ function App() {
   function updateMaterial(customerId, materialId, data) {
     const next = customers.map(c =>
       c.id === customerId
-        ? { ...c, materials: c.materials.map(m => m.id === materialId ? { ...m, ...data } : m) }
+        ? { ...c, materials: c.materials.map(m => m.id === materialId ? { ...m, ...data, updatedAt: Date.now() } : m) }
         : c
     );
     persist(next);
@@ -794,6 +794,7 @@ function App() {
       ...data,
       ...computeRopeCalcs(data),
       addedAt: Date.now(),
+      updatedAt: Date.now(),
     };
     const next = customers.map(c =>
       c.id === customerId ? { ...c, ropes: [rope, ...(c.ropes || [])] } : c
@@ -817,7 +818,7 @@ function App() {
         ? {
             ...c,
             ropes: (c.ropes || []).map(r =>
-              r.id === ropeId ? { ...r, ...data, ...computeRopeCalcs(data) } : r
+              r.id === ropeId ? { ...r, ...data, ...computeRopeCalcs(data), updatedAt: Date.now() } : r
             ),
           }
         : c
@@ -845,13 +846,80 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
+  // Merges an item list (materials or ropes) from two sources by id.
+  // Items only on one side are kept as-is. Items on both sides keep
+  // whichever version has the newer updatedAt (falling back to addedAt).
+  function mergeItemList(currentItems, incomingItems) {
+    const map = new Map();
+    (currentItems || []).forEach(item => map.set(item.id, item));
+    let added = 0, updated = 0;
+    (incomingItems || []).forEach(item => {
+      const existing = map.get(item.id);
+      if (!existing) {
+        map.set(item.id, item);
+        added++;
+      } else {
+        const existingTime = existing.updatedAt || existing.addedAt || 0;
+        const incomingTime = item.updatedAt || item.addedAt || 0;
+        if (incomingTime > existingTime) {
+          map.set(item.id, item);
+          updated++;
+        }
+      }
+    });
+    return { merged: Array.from(map.values()), added, updated };
+  }
+
+  function mergeCustomers(current, incoming) {
+    const map = new Map();
+    current.forEach(c => map.set(c.id, c));
+    const stats = { newCustomers: 0, newMaterials: 0, updatedMaterials: 0, newRopes: 0, updatedRopes: 0 };
+
+    incoming.forEach(incomingCustomer => {
+      const existing = map.get(incomingCustomer.id);
+      if (!existing) {
+        map.set(incomingCustomer.id, {
+          ...incomingCustomer,
+          materials: incomingCustomer.materials || [],
+          ropes: incomingCustomer.ropes || [],
+        });
+        stats.newCustomers++;
+        stats.newMaterials += (incomingCustomer.materials || []).length;
+        stats.newRopes += (incomingCustomer.ropes || []).length;
+        return;
+      }
+      const materialResult = mergeItemList(existing.materials, incomingCustomer.materials);
+      const ropeResult = mergeItemList(existing.ropes, incomingCustomer.ropes);
+      stats.newMaterials += materialResult.added;
+      stats.updatedMaterials += materialResult.updated;
+      stats.newRopes += ropeResult.added;
+      stats.updatedRopes += ropeResult.updated;
+      map.set(incomingCustomer.id, {
+        ...existing,
+        materials: materialResult.merged,
+        ropes: ropeResult.merged,
+      });
+    });
+
+    const mergedList = Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return { mergedList, stats };
+  }
+
   function importData(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const parsed = JSON.parse(e.target.result);
         if (!Array.isArray(parsed)) throw new Error('Invalid file');
-        persist(parsed);
+        const { mergedList, stats } = mergeCustomers(customers, parsed);
+        persist(mergedList);
+        const parts = [];
+        if (stats.newCustomers) parts.push(`${stats.newCustomers} new customer${stats.newCustomers === 1 ? '' : 's'}`);
+        if (stats.newMaterials) parts.push(`${stats.newMaterials} new material${stats.newMaterials === 1 ? '' : 's'}`);
+        if (stats.newRopes) parts.push(`${stats.newRopes} new rope${stats.newRopes === 1 ? '' : 's'}`);
+        if (stats.updatedMaterials) parts.push(`${stats.updatedMaterials} material update${stats.updatedMaterials === 1 ? '' : 's'}`);
+        if (stats.updatedRopes) parts.push(`${stats.updatedRopes} rope update${stats.updatedRopes === 1 ? '' : 's'}`);
+        alert(parts.length ? `Merged in: ${parts.join(', ')}.` : 'Nothing new to merge — you already have everything in this file.');
       } catch (err) {
         alert('That file could not be read as a valid backup.');
       }
@@ -877,7 +945,7 @@ function App() {
           ⬇ Export backup
         </button>
         <label className="btn-text import-label">
-          ⬆ Import backup
+          ⬆ Merge in backup
           <input
             type="file"
             accept="application/json"
